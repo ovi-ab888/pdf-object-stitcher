@@ -73,34 +73,42 @@ def extract_box_from_pdf(pdf_bytes, cfg):
 
 
 def combine_pdfs(pdf_data_list):
-    """Combine all cropped PDFs into a grid layout on A4 pages (2 per row)."""
-    A4_WIDTH, A4_HEIGHT = 595, 842
+    """Combine all cropped PDFs into one A4 page layout (top-left start, grid layout)."""
+    A4_WIDTH, A4_HEIGHT = 595, 842  # A4 size in points
     combined = fitz.open()
 
-    cols = 2  # প্রতি সারিতে ২টা অবজেক্ট
-    gap_x = 20
+    # --- layout setup ---
+    cols = 5                # প্রতি row-এ কয়টা বসবে (তুমি চাইলে পরিবর্তন করতে পারো)
+    margin_left = 20
+    margin_top = 30
+    gap_x = 15
     gap_y = 20
-    cell_w = (A4_WIDTH - (cols + 1) * gap_x) / cols
-    cell_h = cell_w * 1.3  # একটু লম্বা রাখার জন্য আনুপাতিক উচ্চতা
 
-    x_positions = [gap_x + i * (cell_w + gap_x) for i in range(cols)]
-    y_start = A4_HEIGHT - gap_y - cell_h
+    # প্রতিটা tag এর আনুমানিক প্রস্থ
+    cell_w = (A4_WIDTH - (margin_left + gap_x * (cols - 1))) / cols
+    cell_h = cell_w * 2.4  # একটু লম্বা লেবেল হিসেবে ratio রাখা হলো
 
-    row, col = 0, 0
+    x_positions = [margin_left + i * (cell_w + gap_x) for i in range(cols)]
+    y_start = A4_HEIGHT - margin_top - cell_h
+
     page = combined.new_page(width=A4_WIDTH, height=A4_HEIGHT)
+    row, col = 0, 0
 
     for i, pdf_bytes in enumerate(pdf_data_list):
         part = fitz.open("pdf", pdf_bytes)
-        rect = fitz.Rect(x_positions[col], y_start - row * (cell_h + gap_y),
-                         x_positions[col] + cell_w, y_start - row * (cell_h + gap_y) + cell_h)
 
-        # যদি পরের সারি পেজের বাইরে চলে যায়, নতুন পেজ শুরু করো
-        if rect.y1 > A4_HEIGHT or rect.y0 < 0:
+        x = x_positions[col]
+        y = y_start - row * (cell_h + gap_y)
+        rect = fitz.Rect(x, y, x + cell_w, y + cell_h)
+
+        # যদি পেজে জায়গা না থাকে → নতুন পেজ
+        if y < 0:
             page = combined.new_page(width=A4_WIDTH, height=A4_HEIGHT)
             row = 0
             col = 0
-            rect = fitz.Rect(x_positions[col], y_start - row * (cell_h + gap_y),
-                             x_positions[col] + cell_w, y_start - row * (cell_h + gap_y) + cell_h)
+            x = x_positions[col]
+            y = y_start - row * (cell_h + gap_y)
+            rect = fitz.Rect(x, y, x + cell_w, y + cell_h)
 
         page.show_pdf_page(rect, part, 0)
 
@@ -109,14 +117,11 @@ def combine_pdfs(pdf_data_list):
             col = 0
             row += 1
 
-            # যদি নতুন সারি নিচে না ফিট হয়, নতুন পেজ বানাও
-            if (y_start - row * (cell_h + gap_y)) < 0:
-                page = combined.new_page(width=A4_WIDTH, height=A4_HEIGHT)
-                row = 0
-
+    # Final save
     output_bytes = io.BytesIO()
     combined.save(output_bytes)
     return output_bytes.getvalue()
+
 
 
 
