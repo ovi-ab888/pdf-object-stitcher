@@ -28,7 +28,6 @@ def extract_box_from_pdf(pdf_bytes, cfg):
     """Extracts a rectangular box from first page of PDF, converting Illustrator coords."""
     doc = fitz.open("pdf", pdf_bytes)
     page = doc[0]
-
     page_height = page.rect.height
 
     # Illustrator → PDF coordinate conversion
@@ -58,6 +57,17 @@ def extract_box_from_pdf(pdf_bytes, cfg):
     return pdf_out.getvalue()
 
 
+def combine_pdfs(pdf_data_list):
+    """Combine all cropped PDFs into one"""
+    combined = fitz.open()
+    for pdf_bytes in pdf_data_list:
+        part = fitz.open("pdf", pdf_bytes)
+        combined.insert_pdf(part)
+    output_bytes = io.BytesIO()
+    combined.save(output_bytes)
+    return output_bytes.getvalue()
+
+
 # -------------------------
 # STREAMLIT WORKFLOW
 # -------------------------
@@ -76,6 +86,7 @@ if uploaded_files:
             cropped_list.append(cropped_pdf)
             progress.progress((i + 1) / len(uploaded_files))
         
+        # ✅ এখন combine_pdfs ফাংশন ঠিকভাবে defined আছে
         final_pdf = combine_pdfs(cropped_list)
         
         st.success("✅ সব ফাইল প্রসেস করা শেষ! নিচের বাটন দিয়ে ডাউনলোড করো।")
