@@ -25,17 +25,28 @@ BOX_CONFIG = {
 # FUNCTIONS
 # -------------------------
 def extract_box_from_pdf(pdf_bytes, cfg):
-    """Extracts a rectangular box from first page of PDF."""
+    """Extracts a rectangular box from first page of PDF, converting Illustrator coords."""
     doc = fitz.open("pdf", pdf_bytes)
     page = doc[0]
 
-    # Calculate area (Illustrator coordinate → PDF coordinate)
-    rect = fitz.Rect(
-        cfg["X"] + cfg["offsetX"],
-        page.rect.height - (cfg["Y"] - cfg["offsetY"]),
-        cfg["X"] + cfg["W"] + cfg["offsetX"],
-        page.rect.height - (cfg["Y"] + cfg["H"] - cfg["offsetY"])
-    )
+    page_height = page.rect.height
+
+    # Illustrator → PDF coordinate conversion
+    x1 = cfg["X"] + cfg["offsetX"]
+    y1 = page_height - (cfg["Y"] + cfg["H"] - cfg["offsetY"])
+    x2 = cfg["X"] + cfg["W"] + cfg["offsetX"]
+    y2 = page_height - (cfg["Y"] - cfg["offsetY"])
+
+    # Clamp values inside page boundary
+    x1 = max(0, x1)
+    y1 = max(0, y1)
+    x2 = min(page.rect.width, x2)
+    y2 = min(page.rect.height, y2)
+
+    if x2 <= x1 or y2 <= y1:
+        raise ValueError("Calculated crop area is invalid (out of bounds). Check coordinate values.")
+
+    rect = fitz.Rect(x1, y1, x2, y2)
 
     # Crop region to new PDF
     new_pdf = fitz.open()
@@ -45,17 +56,6 @@ def extract_box_from_pdf(pdf_bytes, cfg):
     pdf_out = io.BytesIO()
     new_pdf.save(pdf_out)
     return pdf_out.getvalue()
-
-
-def combine_pdfs(pdf_data_list):
-    """Combine all cropped PDFs into one"""
-    combined = fitz.open()
-    for pdf_bytes in pdf_data_list:
-        part = fitz.open("pdf", pdf_bytes)
-        combined.insert_pdf(part)
-    output_bytes = io.BytesIO()
-    combined.save(output_bytes)
-    return output_bytes.getvalue()
 
 
 # -------------------------
