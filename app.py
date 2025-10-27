@@ -2,15 +2,12 @@ import streamlit as st
 import fitz  # PyMuPDF
 import io
 
-# -------------------------
-# STREAMLIT UI
-# -------------------------
 st.set_page_config(page_title="PDF Object Stitcher", page_icon="📄", layout="wide")
 st.title("📄 PDF Object Stitcher (Illustrator Logic in Python)")
-st.write("Upload multiple PDFs → extract defined box from each → combine all into a new PDF")
+st.write("Upload multiple PDFs → extract defined box from each → combine all into an A4-sized PDF")
 
 # -------------------------
-# BOX CONFIGURATION (same as Illustrator script)
+# BOX CONFIGURATION
 # -------------------------
 BOX_CONFIG = {
     "offsetX": -51,
@@ -48,26 +45,25 @@ def extract_box_from_pdf(pdf_bytes, cfg):
 
     crop_rect = fitz.Rect(x1, y1, x2, y2)
 
-    # Crop content
+    # Crop region from original page
     temp_pdf = fitz.open()
     temp_page = temp_pdf.new_page(width=crop_rect.width, height=crop_rect.height)
     temp_page.show_pdf_page(temp_page.rect, doc, 0, clip=crop_rect)
 
-    # Now place it into an A4 page
-    A4_WIDTH, A4_HEIGHT = 595, 842  # Points
+    # Now fit it inside A4
+    A4_WIDTH, A4_HEIGHT = 595, 842  # points
     output_pdf = fitz.open()
     out_page = output_pdf.new_page(width=A4_WIDTH, height=A4_HEIGHT)
 
-    # Scale down if too large
+    # Scale to fit
     scale = min(A4_WIDTH / crop_rect.width, A4_HEIGHT / crop_rect.height, 1.0)
     new_w = crop_rect.width * scale
     new_h = crop_rect.height * scale
 
-    # Center position on A4
+    # Center position
     pos_x = (A4_WIDTH - new_w) / 2
     pos_y = (A4_HEIGHT - new_h) / 2
 
-    # Paste cropped content in center of A4
     out_rect = fitz.Rect(pos_x, pos_y, pos_x + new_w, pos_y + new_h)
     out_page.show_pdf_page(out_rect, temp_pdf, 0)
 
@@ -75,6 +71,16 @@ def extract_box_from_pdf(pdf_bytes, cfg):
     output_pdf.save(pdf_out)
     return pdf_out.getvalue()
 
+
+def combine_pdfs(pdf_data_list):
+    """Combine all cropped PDFs into one"""
+    combined = fitz.open()
+    for pdf_bytes in pdf_data_list:
+        part = fitz.open("pdf", pdf_bytes)
+        combined.insert_pdf(part)
+    output_bytes = io.BytesIO()
+    combined.save(output_bytes)
+    return output_bytes.getvalue()
 
 
 # -------------------------
@@ -95,14 +101,13 @@ if uploaded_files:
             cropped_list.append(cropped_pdf)
             progress.progress((i + 1) / len(uploaded_files))
         
-        # ✅ এখন combine_pdfs ফাংশন ঠিকভাবে defined আছে
         final_pdf = combine_pdfs(cropped_list)
         
-        st.success("✅ সব ফাইল প্রসেস করা শেষ! নিচের বাটন দিয়ে ডাউনলোড করো।")
+        st.success("✅ সব ফাইল প্রসেস শেষ! নিচের বাটনে ক্লিক করে ডাউনলোড করো।")
         st.download_button(
-            label="📥 Download Combined PDF",
+            label="📥 Download A4 Combined PDF",
             data=final_pdf,
-            file_name="stitched_output.pdf",
+            file_name="A4_combined_output.pdf",
             mime="application/pdf"
         )
 else:
