@@ -2,56 +2,87 @@ import streamlit as st
 import fitz  # PyMuPDF
 import io
 
-st.title("📄 PDF Object Extractor & Combiner")
-st.write("একাধিক PDF আপলোড করো ➜ প্রতিটি থেকে নির্দিষ্ট অংশ কেটে ➜ একত্রে নতুন PDF তৈরি করো")
+# -------------------------
+# STREAMLIT UI
+# -------------------------
+st.set_page_config(page_title="PDF Object Stitcher", page_icon="📄", layout="wide")
+st.title("📄 PDF Object Stitcher (Illustrator Logic in Python)")
+st.write("Upload multiple PDFs → extract defined box from each → combine all into a new PDF")
 
-# --- Box Coordinates (তুমি নিজের মতো পরিবর্তন করতে পারো)
-box = {"X": 68.035, "Y": 181.8821, "W": 102.05, "H": 233.86}
+# -------------------------
+# BOX CONFIGURATION (same as Illustrator script)
+# -------------------------
+BOX_CONFIG = {
+    "offsetX": -51,
+    "offsetY": +123,
+    "X": 68.035,
+    "Y": 181.8821,
+    "W": 102.05,
+    "H": 233.86
+}
 
-# --- File Uploader
-uploaded_files = st.file_uploader(
-    "Upload multiple PDF files",
-    type=["pdf"],
-    accept_multiple_files=True
-)
-
-# --- Function: নির্দিষ্ট অংশ কেটে আনা
-def extract_box(pdf_bytes, box):
+# -------------------------
+# FUNCTIONS
+# -------------------------
+def extract_box_from_pdf(pdf_bytes, cfg):
+    """Extracts a rectangular box from first page of PDF."""
     doc = fitz.open("pdf", pdf_bytes)
     page = doc[0]
-    rect = fitz.Rect(box["X"], box["Y"], box["X"] + box["W"], box["Y"] + box["H"])
 
-    # নতুন PDF তৈরি
+    # Calculate area (Illustrator coordinate → PDF coordinate)
+    rect = fitz.Rect(
+        cfg["X"] + cfg["offsetX"],
+        page.rect.height - (cfg["Y"] - cfg["offsetY"]),
+        cfg["X"] + cfg["W"] + cfg["offsetX"],
+        page.rect.height - (cfg["Y"] + cfg["H"] - cfg["offsetY"])
+    )
+
+    # Crop region to new PDF
     new_pdf = fitz.open()
     new_page = new_pdf.new_page(width=rect.width, height=rect.height)
     new_page.show_pdf_page(new_page.rect, doc, 0, clip=rect)
 
-    pdf_bytes_out = io.BytesIO()
-    new_pdf.save(pdf_bytes_out)
-    return pdf_bytes_out.getvalue()
+    pdf_out = io.BytesIO()
+    new_pdf.save(pdf_out)
+    return pdf_out.getvalue()
 
-# --- যদি ফাইল আপলোড করা হয়
+
+def combine_pdfs(pdf_data_list):
+    """Combine all cropped PDFs into one"""
+    combined = fitz.open()
+    for pdf_bytes in pdf_data_list:
+        part = fitz.open("pdf", pdf_bytes)
+        combined.insert_pdf(part)
+    output_bytes = io.BytesIO()
+    combined.save(output_bytes)
+    return output_bytes.getvalue()
+
+
+# -------------------------
+# STREAMLIT WORKFLOW
+# -------------------------
+uploaded_files = st.file_uploader("Upload multiple PDF files", type=["pdf"], accept_multiple_files=True)
+
 if uploaded_files:
-    st.info(f"{len(uploaded_files)} টা PDF ফাইল পাওয়া গেছে ✔️")
-
-    if st.button("🧩 Generate Combined PDF"):
-        output_pdf = fitz.open()
-
+    st.info(f"{len(uploaded_files)} টা ফাইল পাওয়া গেছে।")
+    
+    if st.button("🧩 Extract & Combine"):
+        cropped_list = []
+        progress = st.progress(0)
+        
         for i, file in enumerate(uploaded_files):
-            st.write(f"Processing file {i+1} ➜ {file.name}")
-            cropped_data = extract_box(file.read(), box)
-            cropped_pdf = fitz.open("pdf", cropped_data)
-            output_pdf.insert_pdf(cropped_pdf)
-
-        # Save final output in memory
-        final_bytes = io.BytesIO()
-        output_pdf.save(final_bytes)
-        st.success("✅ কাজ শেষ! নিচের বাটনে ক্লিক করে নতুন PDF নামাও:")
-
+            st.write(f"Processing: {file.name}")
+            cropped_pdf = extract_box_from_pdf(file.read(), BOX_CONFIG)
+            cropped_list.append(cropped_pdf)
+            progress.progress((i + 1) / len(uploaded_files))
+        
+        final_pdf = combine_pdfs(cropped_list)
+        
+        st.success("✅ সব ফাইল প্রসেস করা শেষ! নিচের বাটন দিয়ে ডাউনলোড করো।")
         st.download_button(
-            label="📥 Download New PDF",
-            data=final_bytes.getvalue(),
-            file_name="combined_output.pdf",
+            label="📥 Download Combined PDF",
+            data=final_pdf,
+            file_name="stitched_output.pdf",
             mime="application/pdf"
         )
 else:
