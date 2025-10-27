@@ -25,10 +25,11 @@ BOX_CONFIG = {
 # FUNCTIONS
 # -------------------------
 def extract_box_from_pdf(pdf_bytes, cfg):
-    """Extracts a rectangular box from first page of PDF, converting Illustrator coords."""
+    """Extracts a rectangular box from first page of PDF and fits it into an A4 page."""
     doc = fitz.open("pdf", pdf_bytes)
     page = doc[0]
     page_height = page.rect.height
+    page_width = page.rect.width
 
     # Illustrator → PDF coordinate conversion
     x1 = cfg["X"] + cfg["offsetX"]
@@ -39,33 +40,41 @@ def extract_box_from_pdf(pdf_bytes, cfg):
     # Clamp values inside page boundary
     x1 = max(0, x1)
     y1 = max(0, y1)
-    x2 = min(page.rect.width, x2)
-    y2 = min(page.rect.height, y2)
+    x2 = min(page_width, x2)
+    y2 = min(page_height, y2)
 
     if x2 <= x1 or y2 <= y1:
         raise ValueError("Calculated crop area is invalid (out of bounds). Check coordinate values.")
 
-    rect = fitz.Rect(x1, y1, x2, y2)
+    crop_rect = fitz.Rect(x1, y1, x2, y2)
 
-    # Crop region to new PDF
-    new_pdf = fitz.open()
-    new_page = new_pdf.new_page(width=rect.width, height=rect.height)
-    new_page.show_pdf_page(new_page.rect, doc, 0, clip=rect)
+    # Crop content
+    temp_pdf = fitz.open()
+    temp_page = temp_pdf.new_page(width=crop_rect.width, height=crop_rect.height)
+    temp_page.show_pdf_page(temp_page.rect, doc, 0, clip=crop_rect)
+
+    # Now place it into an A4 page
+    A4_WIDTH, A4_HEIGHT = 595, 842  # Points
+    output_pdf = fitz.open()
+    out_page = output_pdf.new_page(width=A4_WIDTH, height=A4_HEIGHT)
+
+    # Scale down if too large
+    scale = min(A4_WIDTH / crop_rect.width, A4_HEIGHT / crop_rect.height, 1.0)
+    new_w = crop_rect.width * scale
+    new_h = crop_rect.height * scale
+
+    # Center position on A4
+    pos_x = (A4_WIDTH - new_w) / 2
+    pos_y = (A4_HEIGHT - new_h) / 2
+
+    # Paste cropped content in center of A4
+    out_rect = fitz.Rect(pos_x, pos_y, pos_x + new_w, pos_y + new_h)
+    out_page.show_pdf_page(out_rect, temp_pdf, 0)
 
     pdf_out = io.BytesIO()
-    new_pdf.save(pdf_out)
+    output_pdf.save(pdf_out)
     return pdf_out.getvalue()
 
-
-def combine_pdfs(pdf_data_list):
-    """Combine all cropped PDFs into one"""
-    combined = fitz.open()
-    for pdf_bytes in pdf_data_list:
-        part = fitz.open("pdf", pdf_bytes)
-        combined.insert_pdf(part)
-    output_bytes = io.BytesIO()
-    combined.save(output_bytes)
-    return output_bytes.getvalue()
 
 
 # -------------------------
